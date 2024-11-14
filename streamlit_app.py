@@ -1,56 +1,83 @@
 import streamlit as st
-from openai import OpenAI
+import openai
+import os
+import logging
 
-# Show title and description.
-st.title("💬 Chatbot")
-st.write(
-    "This is a simple chatbot that uses OpenAI's GPT-3.5 model to generate responses. "
-    "To use this app, you need to provide an OpenAI API key, which you can get [here](https://platform.openai.com/account/api-keys). "
-    "You can also learn how to build this app step by step by [following our tutorial](https://docs.streamlit.io/develop/tutorials/llms/build-conversational-apps)."
+# Configure logging
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+
+# Set up Streamlit page configuration
+st.set_page_config(
+    page_title="Chatbot with Grok API",
+    page_icon="🤖",
+    layout="centered",
+    initial_sidebar_state="auto",
 )
 
-# Ask user for their OpenAI API key via `st.text_input`.
-# Alternatively, you can store the API key in `./.streamlit/secrets.toml` and access it
-# via `st.secrets`, see https://docs.streamlit.io/develop/concepts/connections/secrets-management
-openai_api_key = st.text_input("OpenAI API Key", type="password")
-if not openai_api_key:
-    st.info("Please add your OpenAI API key to continue.", icon="🗝️")
-else:
+# Grok API endpoint and Streamlit secrets for secure API management
+API_KEY = st.secrets["xai_api_key"]
+BASE_URL = "https://api.x.ai/v1"
 
-    # Create an OpenAI client.
-    client = OpenAI(api_key=openai_api_key)
+# Set default chatbot messages
+DEFAULT_RESPONSES = {
+    "greeting": "Hello! How can I assist you today?",
+    "farewell": "Goodbye! Have a great day ahead!",
+    "basic_questions": "I'm here to answer your questions to the best of my ability."
+}
 
-    # Create a session state variable to store the chat messages. This ensures that the
-    # messages persist across reruns.
-    if "messages" not in st.session_state:
-        st.session_state.messages = []
-
-    # Display the existing chat messages via `st.chat_message`.
-    for message in st.session_state.messages:
-        with st.chat_message(message["role"]):
-            st.markdown(message["content"])
-
-    # Create a chat input field to allow the user to enter a message. This will display
-    # automatically at the bottom of the page.
-    if prompt := st.chat_input("What is up?"):
-
-        # Store and display the current prompt.
-        st.session_state.messages.append({"role": "user", "content": prompt})
-        with st.chat_message("user"):
-            st.markdown(prompt)
-
-        # Generate a response using the OpenAI API.
-        stream = client.chat.completions.create(
-            model="gpt-3.5-turbo",
-            messages=[
-                {"role": m["role"], "content": m["content"]}
-                for m in st.session_state.messages
-            ],
-            stream=True,
+# Chat function that communicates with the Grok API
+def get_grok_response(user_message):
+    try:
+        # Set up the OpenAI client
+        client = openai.OpenAI(api_key=API_KEY, base_url=BASE_URL)
+        
+        # Construct the request payload
+        messages = [
+            {"role": "system", "content": "You are Grok, a chatbot inspired by the Hitchhiker's Guide to the Galaxy."},
+            {"role": "user", "content": user_message}
+        ]
+        
+        completion = client.chat.completions.create(
+            model="grok-beta",
+            messages=messages
         )
 
-        # Stream the response to the chat using `st.write_stream`, then store it in 
-        # session state.
-        with st.chat_message("assistant"):
-            response = st.write_stream(stream)
-        st.session_state.messages.append({"role": "assistant", "content": response})
+        # Return the response from Grok
+        return completion.choices[0].message['content'] if completion.choices else "I'm not sure how to respond to that."
+    except Exception as e:
+        logging.error(f"Error communicating with Grok API: {e}")
+        return "Sorry, I am currently experiencing connectivity issues."
+
+# Streamlit UI elements for the chatbot application
+def main():
+    st.title("Streamlit Chatbot with Grok API")
+    st.write("Welcome! Feel free to ask me anything. 🚀")
+
+    # Store conversation history
+    if "history" not in st.session_state:
+        st.session_state.history = []
+
+    # Input for user message
+    user_message = st.text_input("You:", key="user_message")
+
+    # Handle user input
+    if user_message:
+        # Add user message to history
+        st.session_state.history.append({"user": user_message})
+
+        # Get response from Grok API
+        bot_response = get_grok_response(user_message)
+
+        # Add bot response to history
+        st.session_state.history.append({"bot": bot_response})
+
+    # Display conversation history with unique keys for each element
+    for idx, message in enumerate(st.session_state.history):
+        if "user" in message:
+            st.text_area("User:", message["user"], key=f"user_{idx}", disabled=True)
+        elif "bot" in message:
+            st.text_area("Bot:", message["bot"], key=f"bot_{idx}", disabled=True)
+
+# Entry point for the Streamlit application
+if __name__ == "__main__":
+    main()
